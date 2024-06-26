@@ -37,6 +37,11 @@ const MAX_PLAYER_VEL: f32 = 500.;
 pub struct Player;
 
 #[derive(Component)]
+pub struct MaxHealth(pub f32);
+
+#[derive(Component)]
+pub struct CurrentHealth(pub f32);
+#[derive(Component)]
 pub struct CollidedThisFrame(pub Timer);
 
 #[derive(Component)]
@@ -55,10 +60,10 @@ const ENEMY_X_RANGE: f32 = 100.0;
 const ENEMY_JUMP_FORCE: f32 = 300.0;
 
 #[derive(Component)]
-struct EnemyDirection(f32);
+pub struct EnemyDirection(f32);
 
 #[derive(Component)]
-struct JumpTimer(Timer);
+pub struct JumpTimer(Timer);
 
 pub fn setup(mut commands: Commands) {
     // Camera
@@ -244,21 +249,28 @@ pub fn handle_velocity(
 
 pub fn handle_collisions(
     mut collisions: EventReader<CollisionEvent>,
-    mut player: Query<(Entity, &mut Velocity), (With<Player>, Without<CollidedThisFrame>)>,
+    mut player: Query<
+        (Entity, &mut Velocity, &MaxHealth, &mut CurrentHealth),
+        (With<Player>, Without<CollidedThisFrame>),
+    >,
     colliders: Query<Entity, With<Collider>>,
+    enemies: Query<Entity, With<Enemy>>,
     mut commands: Commands,
     context: ResMut<RapierContext>,
 ) {
-    let Ok((player, mut vel)) = player.get_single_mut() else {
+    let Ok((player, mut vel, max_hp, mut curr_hp)) = player.get_single_mut() else {
         return;
     };
 
     let hits_this_frame = context
         .intersection_pairs()
         .filter(|c| (c.0 == player) || (c.1 == player));
-    for _hit in hits_this_frame {
+    for (e1, e2, _) in hits_this_frame {
         // println!("{:?}", hit);
         // vel.0 = Vec2::ZERO;
+        if (e1 == player && enemies.get(e2).is_ok()) || (e2 == player && enemies.get(e1).is_ok()) {
+            println!("HIT ENEMY");
+        }
         commands
             .entity(player)
             .insert(CollidedThisFrame(Timer::from_seconds(0.1, TimerMode::Once)));
