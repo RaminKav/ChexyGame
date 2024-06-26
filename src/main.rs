@@ -23,6 +23,7 @@ fn main() {
             handle_velocity,
             enemy_movement,
             handle_health_change,
+            handle_update_money_text,
             handle_collisions
                 .before(handle_velocity)
                 .before(handle_inputs),
@@ -68,6 +69,9 @@ pub struct JumpTimer(Timer);
 
 #[derive(Component)]
 pub struct HPBar;
+#[derive(Component)]
+
+pub struct MoneyText(pub i32);
 
 pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
@@ -134,6 +138,55 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             ..default()
         }),
+    ));
+    // money text
+    // commands.spawn((
+    //     // Create a TextBundle that has a Text with a single section.
+    //     TextBundle::from_section(
+    //         // Accepts a `String` or any type that converts into a `String`, such as `&str`
+    //         "$",
+    //         TextStyle {
+    //             font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+    //             font_size: 20.0,
+    //             color: Color::GOLD,
+    //         },
+    //     ) // Set the alignment of the Text
+    //     .with_text_alignment(TextAlignment::Left)
+    //     // Set the style of the TextBundle itself.
+    //     .with_style(Style {
+    //         position_type: PositionType::Absolute,
+    //         position: UiRect {
+    //             top: Val::Px(5.0),
+    //             right: Val::Px(30.0),
+    //             ..default()
+    //         },
+    //         ..default()
+    //     }),
+    //     MoneyText(0),
+    // ));
+    commands.spawn((
+        // Create a TextBundle that has a Text with a single section.
+        TextBundle::from_section(
+            // Accepts a `String` or any type that converts into a `String`, such as `&str`
+            "$0",
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 20.0,
+                color: Color::GOLD,
+            },
+        ) // Set the alignment of the Text
+        .with_text_alignment(TextAlignment::Left)
+        // Set the style of the TextBundle itself.
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                top: Val::Px(5.0),
+                right: Val::Px(10.0),
+                ..default()
+            },
+            ..default()
+        }),
+        MoneyText(0),
     ));
 
     // Rectangle - Enemy
@@ -355,6 +408,7 @@ pub fn enemy_movement(
 pub fn handle_health_change(
     query: Query<(Entity, &MaxHealth, &CurrentHealth, Option<&Player>), Changed<CurrentHealth>>,
     mut hp_bar: Query<&mut Sprite, With<HPBar>>,
+    mut money: Query<&mut MoneyText>,
 ) {
     for (entity, max_hp, curr_hp, player_option) in query.iter() {
         println!("HP: {}/{}", curr_hp.0, max_hp.0);
@@ -362,6 +416,22 @@ pub fn handle_health_change(
             for mut sprite in hp_bar.iter_mut() {
                 sprite.custom_size = Some(Vec2::new(200.0 * (curr_hp.0 / max_hp.0), 10.));
             }
+        } else {
+            if curr_hp.0 <= 0. {
+                println!("KILL!");
+                money.single_mut().0 += 100;
+            }
+        }
+    }
+}
+
+pub fn handle_update_money_text(
+    query: Query<&MoneyText, Changed<MoneyText>>,
+    mut text: Query<&mut Text>,
+) {
+    for money in query.iter() {
+        for mut text in text.iter_mut() {
+            text.sections[0].value = format!("${}", money.0);
         }
     }
 }
