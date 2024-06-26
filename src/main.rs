@@ -224,10 +224,10 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn(SpriteBundle {
             sprite: Sprite {
-                color: Color::rgb(0.5, 0.0, 0.0),
                 custom_size: Some(Vec2::new(100.0, 100.0)),
                 ..default()
             },
+            texture: asset_server.load("bill-asset.png"),
             transform: Transform::from_translation(Vec3::new(0.0, -305., 1.)),
             ..default()
         })
@@ -601,6 +601,8 @@ pub fn spawn_random_enemies(
     time: Res<Time>,
     mut spawn_timer: ResMut<SpawnTimer>,
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
+
 ) {
     spawn_timer.0.tick(time.delta());
     if spawn_timer.0.finished() {
@@ -614,10 +616,10 @@ pub fn spawn_random_enemies(
         commands
             .spawn(SpriteBundle {
                 sprite: Sprite {
-                    color: Color::rgb(0.5, 0.0, 0.0),
                     custom_size: Some(Vec2::new(100.0, 100.0)),
                     ..default()
                 },
+                texture: asset_server.load("bill-asset.png"),
                 transform: Transform::from_translation(pos),
                 ..default()
             })
