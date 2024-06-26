@@ -90,7 +90,9 @@ pub fn setup(mut commands: Commands) {
         .insert(Collider::cuboid(25.0, 50.0))
         .insert(Velocity::default())
         .insert(Gravity(Vec2::new(0., GRAVITY)))
-        .insert(Player);
+        .insert(Player)
+        .insert(MaxHealth(100.0))
+        .insert(CurrentHealth(100.0));
 
     // Rectangle - Enemy
     commands
@@ -269,7 +271,8 @@ pub fn handle_collisions(
         // println!("{:?}", hit);
         // vel.0 = Vec2::ZERO;
         if (e1 == player && enemies.get(e2).is_ok()) || (e2 == player && enemies.get(e1).is_ok()) {
-            println!("HIT ENEMY");
+            curr_hp.0 -= 1.;
+            println!("HIT ENEMY {:?}", curr_hp.0);
         }
         commands
             .entity(player)
