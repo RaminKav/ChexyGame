@@ -14,6 +14,7 @@ fn main() {
     app.add_plugins(DefaultPlugins)
         .insert_resource(CursorPos::default())
         .insert_resource(SpawnTimer(Timer::from_seconds(3., TimerMode::Repeating)))
+        .insert_resource(MonthTimer(Timer::from_seconds(75., TimerMode::Repeating)))
         // .insert_resource(RapierConfiguration {
         //     gravity: Vec2::new(0., -300.),
         //     ..Default::default()
@@ -25,6 +26,7 @@ fn main() {
             handle_inputs,
             update_cursor_pos,
             handle_velocity,
+            tick_month,
             handle_proj_collisions,
             spawn_random_enemies,
             enemy_movement,
@@ -82,7 +84,10 @@ pub struct JumpTimer(Timer);
 pub struct HPBar;
 #[derive(Component)]
 
-pub struct MoneyText(pub i32);
+pub struct MoneyText(pub i32, pub i32);
+#[derive(Component)]
+
+pub struct DayText;
 
 pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
@@ -160,31 +165,31 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..default()
         }),
     ));
-    // money text
-    // commands.spawn((
-    //     // Create a TextBundle that has a Text with a single section.
-    //     TextBundle::from_section(
-    //         // Accepts a `String` or any type that converts into a `String`, such as `&str`
-    //         "$",
-    //         TextStyle {
-    //             font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-    //             font_size: 20.0,
-    //             color: Color::GOLD,
-    //         },
-    //     ) // Set the alignment of the Text
-    //     .with_text_alignment(TextAlignment::Left)
-    //     // Set the style of the TextBundle itself.
-    //     .with_style(Style {
-    //         position_type: PositionType::Absolute,
-    //         position: UiRect {
-    //             top: Val::Px(5.0),
-    //             right: Val::Px(30.0),
-    //             ..default()
-    //         },
-    //         ..default()
-    //     }),
-    //     MoneyText(0),
-    // ));
+    commands.spawn((
+        // Create a TextBundle that has a Text with a single section.
+        TextBundle::from_section(
+            // Accepts a `String` or any type that converts into a `String`, such as `&str`
+            "Day 1",
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 40.0,
+                color: Color::ORANGE_RED,
+            },
+        ) // Set the alignment of the Text
+        .with_text_alignment(TextAlignment::Left)
+        // Set the style of the TextBundle itself.
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                top: Val::Px(5.0),
+                left: Val::Px(600.0),
+                ..default()
+            },
+            ..default()
+        }),
+        DayText,
+    ));
+
     commands.spawn((
         // Create a TextBundle that has a Text with a single section.
         TextBundle::from_section(
@@ -207,7 +212,7 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             ..default()
         }),
-        MoneyText(0),
+        MoneyText(0, 2800),
     ));
 
     // Rectangle - Enemy
@@ -280,24 +285,35 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 pub fn handle_inputs(
-    mut player_query: Query<(Entity, &mut Velocity, &mut Gravity, &Transform), (With<Player>,)>,
+    mut player_query: Query<
+        (Entity, &mut Velocity, &mut Gravity, &mut Sprite, &Transform),
+        With<Player>,
+    >,
     time: Res<Time>,
     key_input: ResMut<Input<KeyCode>>,
     mouse_input: ResMut<Input<MouseButton>>,
     mut commands: Commands,
     cur: Res<CursorPos>,
-    asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>,
 ) {
-    let (player_e, mut vel, mut grav, transform) = player_query.single_mut();
+    let (player_e, mut vel, mut grav, mut sprite, transform) = player_query.single_mut();
     let mut d = Vec2::ZERO;
     let speed = 200.;
     let s = speed * time.delta_seconds();
 
     if key_input.pressed(KeyCode::A) {
         d.x -= 1.;
+        if vel.0.x > 0. {
+            vel.0.x = 0.;
+        }
+        sprite.flip_x = false;
     }
     if key_input.pressed(KeyCode::D) {
         d.x += 1.;
+        if vel.0.x < 0. {
+            vel.0.x = 0.;
+        }
+        sprite.flip_x = true;
     }
     if key_input.pressed(KeyCode::W) {
         println!("W");
@@ -508,7 +524,7 @@ pub fn handle_health_change(
 
 pub fn handle_update_money_text(mut query: Query<(&MoneyText, &mut Text), Changed<MoneyText>>) {
     for (money, mut text) in query.iter_mut() {
-        text.sections[0].value = format!("${}", money.0);
+        text.sections[0].value = format!("RENT: ${} Cash: ${}", money.1, money.0);
     }
 }
 
@@ -575,6 +591,8 @@ pub fn cursor_pos_in_ui(
 
 #[derive(Resource)]
 pub struct SpawnTimer(Timer);
+#[derive(Resource)]
+pub struct MonthTimer(Timer);
 
 pub fn spawn_random_enemies(
     time: Res<Time>,
@@ -612,5 +630,57 @@ pub fn spawn_random_enemies(
                 Timer::from_seconds(rng.gen_range(0.3_f32..1.2_f32), TimerMode::Repeating),
             ))
             .insert(JumpTimer(Timer::from_seconds(10.0, TimerMode::Repeating)));
+    }
+}
+
+pub fn tick_month(
+    mut month: ResMut<MonthTimer>,
+    mut text: Query<&mut Text, With<DayText>>,
+    time: Res<Time>,
+    mut rent_tracker: Query<&mut MoneyText>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+) {
+    month.0.tick(time.delta());
+    for mut t in text.iter_mut() {
+        println!(
+            "DAY {} {:?}",
+            month.0.elapsed().as_secs(),
+            f32::floor(month.0.elapsed().as_secs() as f32 / 2.5)
+        );
+        t.sections[0].value = format!(
+            "Day {}",
+            f32::floor(month.0.elapsed().as_secs() as f32 / 2.5)
+        );
+    }
+    if month.0.finished() {
+        let mut rent = rent_tracker.single_mut();
+        if rent.0 < rent.1 {
+            commands.spawn((
+                // Create a TextBundle that has a Text with a single section.
+                TextBundle::from_section(
+                    // Accepts a `String` or any type that converts into a `String`, such as `&str`
+                    "GAME OVER",
+                    TextStyle {
+                        font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                        font_size: 100.0,
+                        color: Color::ORANGE_RED,
+                    },
+                ) // Set the alignment of the Text
+                .with_text_alignment(TextAlignment::Left)
+                // Set the style of the TextBundle itself.
+                .with_style(Style {
+                    position_type: PositionType::Absolute,
+                    position: UiRect {
+                        top: Val::Px(200.0),
+                        left: Val::Px(600.0),
+                        ..default()
+                    },
+                    ..default()
+                }),
+            ));
+        } else {
+            rent.0 -= rent.1;
+        }
     }
 }
