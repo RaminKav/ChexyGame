@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite::Anchor};
 use bevy_rapier2d::{
     control::KinematicCharacterController,
     dynamics::RigidBody,
@@ -22,6 +22,7 @@ fn main() {
             handle_inputs,
             handle_velocity,
             enemy_movement,
+            handle_health_change,
             handle_collisions
                 .before(handle_velocity)
                 .before(handle_inputs),
@@ -65,7 +66,10 @@ pub struct EnemyDirection(f32);
 #[derive(Component)]
 pub struct JumpTimer(Timer);
 
-pub fn setup(mut commands: Commands) {
+#[derive(Component)]
+pub struct HPBar;
+
+pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
     commands.spawn(Camera2dBundle::default());
 
@@ -93,6 +97,44 @@ pub fn setup(mut commands: Commands) {
         .insert(Player)
         .insert(MaxHealth(100.0))
         .insert(CurrentHealth(100.0));
+
+    // PLAYER HP BAR
+    commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0.9, 0.1, 0.1),
+                custom_size: Some(Vec2::new(200.0, 10.0)),
+                anchor: Anchor::CenterLeft,
+                ..default()
+            },
+            transform: Transform::from_translation(Vec3::new(-490., 340., 0.)),
+            ..default()
+        })
+        .insert(HPBar);
+
+    commands.spawn((
+        // Create a TextBundle that has a Text with a single section.
+        TextBundle::from_section(
+            // Accepts a `String` or any type that converts into a `String`, such as `&str`
+            "Credit Score",
+            TextStyle {
+                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 30.0,
+                color: Color::WHITE,
+            },
+        ) // Set the alignment of the Text
+        .with_text_alignment(TextAlignment::Left)
+        // Set the style of the TextBundle itself.
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                top: Val::Px(5.0),
+                left: Val::Px(5.0),
+                ..default()
+            },
+            ..default()
+        }),
+    ));
 
     // Rectangle - Enemy
     commands
@@ -306,6 +348,20 @@ pub fn enemy_movement(
             velocity.0.y = ENEMY_JUMP_FORCE;
 
             jump_timer.0.reset();
+        }
+    }
+}
+
+pub fn handle_health_change(
+    query: Query<(Entity, &MaxHealth, &CurrentHealth, Option<&Player>), Changed<CurrentHealth>>,
+    mut hp_bar: Query<&mut Sprite, With<HPBar>>,
+) {
+    for (entity, max_hp, curr_hp, player_option) in query.iter() {
+        println!("HP: {}/{}", curr_hp.0, max_hp.0);
+        if player_option.is_some() {
+            for mut sprite in hp_bar.iter_mut() {
+                sprite.custom_size = Some(Vec2::new(200.0 * (curr_hp.0 / max_hp.0), 10.));
+            }
         }
     }
 }
