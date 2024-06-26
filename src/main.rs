@@ -337,7 +337,7 @@ pub fn handle_inputs(
                     custom_size: Some(Vec2::new(70.0, 50.0)),
                     ..default()
                 },
-                texture: asset_server.load("credit-card-projectile.png"),
+                texture: asset_server.load("credit-card-projectile-upgrade.png"),
 
                 transform: Transform {
                     translation: transform.translation,
