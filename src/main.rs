@@ -116,7 +116,7 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             texture: asset_server.load("chester.png"),
 
-            transform: Transform::from_translation(Vec3::new(-50., 0., 1.)),
+            transform: Transform::from_translation(Vec3::new(-50., -300., 1.)),
             ..default()
         })
         .insert(KinematicCharacterController {
@@ -228,7 +228,7 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 custom_size: Some(Vec2::new(100.0, 100.0)),
                 ..default()
             },
-            transform: Transform::from_translation(Vec3::new(0.0, -125., 1.)),
+            transform: Transform::from_translation(Vec3::new(0.0, -305., 1.)),
             ..default()
         })
         // .insert(RigidBody::Dynamic)
@@ -320,6 +320,10 @@ pub fn handle_inputs(
     }
     if key_input.pressed(KeyCode::S) {
         d.y -= 1.;
+    }
+
+    if !key_input.pressed(KeyCode::A) && !key_input.pressed(KeyCode::D) {
+        vel.0.x = 0.;
     }
     if mouse_input.just_pressed(MouseButton::Left) {
         // Create a small entity used as a projectile
