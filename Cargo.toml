@@ -1,0 +1,9 @@
+[package]
+name = "Bevy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = {version = "0.10.1"}
+bevy_asset_loader = "0.16.0"
+bevy_rapier2d = {version = "0.21.0", features = ["simd-stable","parallel"]  }
