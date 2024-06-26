@@ -7,11 +7,13 @@ use bevy_rapier2d::{
     plugin::{NoUserData, RapierConfiguration, RapierContext, RapierPhysicsPlugin},
     render::RapierDebugRenderPlugin,
 };
+use rand::Rng;
 
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .insert_resource(CursorPos::default())
+        .insert_resource(SpawnTimer(Timer::from_seconds(3., TimerMode::Repeating)))
         // .insert_resource(RapierConfiguration {
         //     gravity: Vec2::new(0., -300.),
         //     ..Default::default()
@@ -24,6 +26,7 @@ fn main() {
             update_cursor_pos,
             handle_velocity,
             handle_proj_collisions,
+            spawn_random_enemies,
             enemy_movement,
             handle_health_change,
             handle_update_money_text,
@@ -67,10 +70,10 @@ pub struct Enemy;
 
 const ENEMY_SPEED: f32 = 200.0;
 const ENEMY_X_RANGE: f32 = 100.0;
-const ENEMY_JUMP_FORCE: f32 = 300.0;
+const ENEMY_JUMP_FORCE: f32 = 100.0;
 
 #[derive(Component)]
-pub struct EnemyDirection(f32);
+pub struct EnemyDirection(f32, Timer);
 
 #[derive(Component)]
 pub struct JumpTimer(Timer);
@@ -214,10 +217,13 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(Collider::cuboid(50.0, 50.0))
         .insert(Velocity::default())
         .insert(Enemy)
-        .insert(MaxHealth(10.0))
-        .insert(CurrentHealth(10.0))
+        .insert(MaxHealth(2.0))
+        .insert(CurrentHealth(2.0))
         .insert(Sensor)
-        .insert(EnemyDirection(1.0))
+        .insert(EnemyDirection(
+            1.0,
+            Timer::from_seconds(2., TimerMode::Repeating),
+        ))
         .insert(JumpTimer(Timer::from_seconds(10.0, TimerMode::Repeating)));
 
     // Platform
@@ -388,6 +394,7 @@ pub fn handle_collisions(
         (With<Player>, Without<CollidedThisFrame>),
     >,
     enemies: Query<Entity, With<Enemy>>,
+    proj: Query<Entity, With<Projectile>>,
     mut commands: Commands,
     context: ResMut<RapierContext>,
 ) {
@@ -395,12 +402,12 @@ pub fn handle_collisions(
         return;
     };
 
-    let hits_this_frame = context
-        .intersection_pairs()
-        .filter(|c| (c.0 == player) || (c.1 == player));
+    let hits_this_frame = context.intersection_pairs().filter(|c| {
+        ((c.0 == player) || (c.1 == player)) && proj.get(c.0).is_err() && proj.get(c.1).is_err()
+    });
     for (e1, e2, _) in hits_this_frame {
         if (e1 == player && enemies.get(e2).is_ok()) || (e2 == player && enemies.get(e1).is_ok()) {
-            curr_hp.0 -= 1.;
+            curr_hp.0 -= 10.;
             println!("HIT ENEMY {:?}", curr_hp.0);
         }
         commands
@@ -432,28 +439,22 @@ pub fn handle_proj_collisions(
 
 pub fn enemy_movement(
     time: Res<Time>,
-    mut query: Query<
-        (
-            &mut Transform,
-            &mut Velocity,
-            &mut EnemyDirection,
-            &mut JumpTimer,
-        ),
-        With<Enemy>,
-    >,
+    mut query: Query<(&mut Transform, &mut EnemyDirection, &mut JumpTimer), With<Enemy>>,
 ) {
-    for (mut transform, mut velocity, mut direction, mut jump_timer) in query.iter_mut() {
+    for (mut transform, mut direction, mut jump_timer) in query.iter_mut() {
         let delta_move = ENEMY_SPEED * direction.0 * time.delta_seconds();
         transform.translation.x += delta_move;
 
-        if transform.translation.x >= ENEMY_X_RANGE || transform.translation.x <= -ENEMY_X_RANGE {
+        direction.1.tick(time.delta());
+
+        if direction.1.finished() {
             direction.0 *= -1.0;
         }
 
         jump_timer.0.tick(time.delta());
 
         if jump_timer.0.finished() {
-            velocity.0.y = ENEMY_JUMP_FORCE;
+            transform.translation.y = ENEMY_JUMP_FORCE;
 
             jump_timer.0.reset();
         }
@@ -559,4 +560,46 @@ pub fn cursor_pos_in_ui(
     let ndc_to_world = t.compute_matrix() * cam.projection_matrix().inverse();
     let ndc = (cursor_pos / window_size) * 2.0 - Vec2::ONE;
     ndc_to_world.project_point3(ndc.extend(0.0))
+}
+
+#[derive(Resource)]
+pub struct SpawnTimer(Timer);
+
+pub fn spawn_random_enemies(
+    time: Res<Time>,
+    mut spawn_timer: ResMut<SpawnTimer>,
+    mut commands: Commands,
+) {
+    spawn_timer.0.tick(time.delta());
+    if spawn_timer.0.finished() {
+        // Spawn an enemy
+        let mut rng = rand::thread_rng();
+        let pos = Vec3::new(
+            rng.gen_range(-300.0..300.0),
+            rng.gen_range(-200.0..300.0),
+            0.,
+        );
+        commands
+            .spawn(SpriteBundle {
+                sprite: Sprite {
+                    color: Color::rgb(0.5, 0.0, 0.0),
+                    custom_size: Some(Vec2::new(100.0, 100.0)),
+                    ..default()
+                },
+                transform: Transform::from_translation(pos),
+                ..default()
+            })
+            // .insert(RigidBody::Dynamic)
+            .insert(Collider::cuboid(50.0, 50.0))
+            // .insert(Velocity::default())
+            .insert(Enemy)
+            .insert(MaxHealth(2.0))
+            .insert(CurrentHealth(2.0))
+            .insert(Sensor)
+            .insert(EnemyDirection(
+                1.0,
+                Timer::from_seconds(rng.gen_range(0.3_f32..1.2_f32), TimerMode::Repeating),
+            ))
+            .insert(JumpTimer(Timer::from_seconds(10.0, TimerMode::Repeating)));
+    }
 }
