@@ -21,6 +21,7 @@ fn main() {
         .add_systems((
             handle_inputs,
             handle_velocity,
+            enemy_movement,
             handle_collisions
                 .before(handle_velocity)
                 .before(handle_inputs),
@@ -44,6 +45,20 @@ pub struct Gravity(pub Vec2);
 
 #[derive(Component, Default)]
 pub struct Velocity(pub Vec2);
+
+// ENEMY STUFF
+#[derive(Component)]
+pub struct Enemy;
+
+const ENEMY_SPEED: f32 = 200.0;
+const ENEMY_X_RANGE: f32 = 100.0;
+const ENEMY_JUMP_FORCE: f32 = 300.0;
+
+#[derive(Component)]
+struct EnemyDirection(f32);
+
+#[derive(Component)]
+struct JumpTimer(Timer);
 
 pub fn setup(mut commands: Commands) {
     // Camera
@@ -71,6 +86,25 @@ pub fn setup(mut commands: Commands) {
         .insert(Velocity::default())
         .insert(Gravity(Vec2::new(0., GRAVITY)))
         .insert(Player);
+
+    // Rectangle - Enemy
+    commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0.5, 0.0, 0.0),
+                custom_size: Some(Vec2::new(100.0, 100.0)),
+                ..default()
+            },
+            transform: Transform::from_translation(Vec3::new(0.0, -125., 0.)),
+            ..default()
+        })
+        // .insert(RigidBody::Dynamic)
+        .insert(Collider::cuboid(50.0, 50.0))
+        .insert(Velocity::default())
+        .insert(Enemy)
+        .insert(Sensor)
+        .insert(EnemyDirection(1.0))
+        .insert(JumpTimer(Timer::from_seconds(10.0, TimerMode::Repeating)));
 
     // Platform
     commands
@@ -228,5 +262,35 @@ pub fn handle_collisions(
         commands
             .entity(player)
             .insert(CollidedThisFrame(Timer::from_seconds(0.1, TimerMode::Once)));
+    }
+}
+
+pub fn enemy_movement(
+    time: Res<Time>,
+    mut query: Query<
+        (
+            &mut Transform,
+            &mut Velocity,
+            &mut EnemyDirection,
+            &mut JumpTimer,
+        ),
+        With<Enemy>,
+    >,
+) {
+    for (mut transform, mut velocity, mut direction, mut jump_timer) in query.iter_mut() {
+        let delta_move = ENEMY_SPEED * direction.0 * time.delta_seconds();
+        transform.translation.x += delta_move;
+
+        if transform.translation.x >= ENEMY_X_RANGE || transform.translation.x <= -ENEMY_X_RANGE {
+            direction.0 *= -1.0;
+        }
+
+        jump_timer.0.tick(time.delta());
+
+        if jump_timer.0.finished() {
+            velocity.0.y = ENEMY_JUMP_FORCE;
+
+            jump_timer.0.reset();
+        }
     }
 }
