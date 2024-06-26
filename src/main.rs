@@ -25,6 +25,7 @@ fn main() {
             handle_collisions
                 .before(handle_velocity)
                 .before(handle_inputs),
+            move_projectiles
         ));
 
     app.run();
@@ -36,6 +37,10 @@ const MAX_PLAYER_VEL: f32 = 500.;
 #[derive(Component)]
 pub struct Player;
 
+#[derive(Component)]
+struct Projectile {
+    direction: Vec2,
+}
 #[derive(Component)]
 pub struct MaxHealth(pub f32);
 
@@ -159,12 +164,12 @@ pub fn setup(mut commands: Commands) {
 }
 
 pub fn handle_inputs(
-    mut player_query: Query<(Entity, &mut Velocity, &mut Gravity), (With<Player>,)>,
+    mut player_query: Query<(Entity, &mut Velocity, &mut Gravity, &Transform), (With<Player>,)>,
     time: Res<Time>,
     key_input: ResMut<Input<KeyCode>>,
     mut commands: Commands,
 ) {
-    let (player_e, mut vel, mut grav) = player_query.single_mut();
+    let (player_e, mut vel, mut grav, transform) = player_query.single_mut();
     let mut d = Vec2::ZERO;
     let speed = 300.;
     let s = speed * time.delta_seconds();
@@ -181,6 +186,31 @@ pub fn handle_inputs(
     }
     if key_input.pressed(KeyCode::S) {
         d.y -= 1.;
+    }
+    if key_input.just_pressed(KeyCode::L) {
+        // Create a small entity used as a projectile
+        let direction = if key_input.pressed(KeyCode::A) {
+            Vec2::new(-1.0, 0.0)
+        } else {
+            Vec2::new(1.0, 0.0)
+        };
+
+        commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::rgb(1.0, 0.0, 0.0),
+                    custom_size: Some(Vec2::new(10.0, 10.0)),
+                    ..default()
+                },
+                transform: Transform {
+                    translation: transform.translation,
+                    ..default()
+                },
+                ..default()
+            },
+            Projectile { direction },
+            Velocity(direction * 300.0), // Set the projectile direction and speed
+        ));
     }
     if key_input.just_pressed(KeyCode::Space) {
         vel.0.y = 150.;
@@ -307,5 +337,15 @@ pub fn enemy_movement(
 
             jump_timer.0.reset();
         }
+    }
+}
+
+// Add the system to move projectiles
+pub fn move_projectiles(
+    mut projectile_query: Query<(&mut Transform, &Velocity, &Projectile), With<Projectile>>,
+    time: Res<Time>,
+) {
+    for (mut transform, velocity, projectile) in projectile_query.iter_mut() {
+        transform.translation += Vec3::new(projectile.direction.x, projectile.direction.y, 0.0) * velocity.0.length() * time.delta_seconds();
     }
 }
