@@ -87,7 +87,15 @@ pub struct MoneyText(pub i32);
 pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
     commands.spawn(Camera2dBundle::default());
-
+    // Background
+    commands.spawn(SpriteBundle {
+        texture: asset_server.load("city-background.png"),
+        transform: Transform {
+            translation: Vec3::new(0.0, 0.0, -1.0), // Ensure the background is behind all entities
+            ..default()
+        },
+        ..default()
+    });
     // Rectangle
     commands
         .spawn(SpriteBundle {
