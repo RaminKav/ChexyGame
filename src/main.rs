@@ -272,6 +272,7 @@ pub fn handle_inputs(
     mouse_input: ResMut<Input<MouseButton>>,
     mut commands: Commands,
     cur: Res<CursorPos>,
+    asset_server: Res<AssetServer>
 ) {
     let (player_e, mut vel, mut grav, transform) = player_query.single_mut();
     let mut d = Vec2::ZERO;
@@ -299,10 +300,12 @@ pub fn handle_inputs(
         commands.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    color: Color::rgb(1.0, 0.0, 0.0),
-                    custom_size: Some(Vec2::new(10.0, 10.0)),
+                    // color: Color::rgb(1.0, 0.0, 0.0),
+                    custom_size: Some(Vec2::new(70.0, 50.0)),
                     ..default()
                 },
+                texture: asset_server.load("credit-card-projectile.png"),
+
                 transform: Transform {
                     translation: transform.translation,
                     ..default()
