@@ -1,4 +1,4 @@
-use bevy::{prelude::*, sprite::Anchor};
+use bevy::{prelude::*, sprite::Anchor, window::PrimaryWindow};
 use bevy_rapier2d::{
     control::KinematicCharacterController,
     dynamics::RigidBody,
@@ -11,6 +11,7 @@ use bevy_rapier2d::{
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
+        .insert_resource(CursorPos::default())
         // .insert_resource(RapierConfiguration {
         //     gravity: Vec2::new(0., -300.),
         //     ..Default::default()
@@ -20,14 +21,16 @@ fn main() {
         .add_startup_system(setup)
         .add_systems((
             handle_inputs,
+            update_cursor_pos,
             handle_velocity,
+            handle_proj_collisions,
             enemy_movement,
             handle_health_change,
             handle_update_money_text,
             handle_collisions
                 .before(handle_velocity)
                 .before(handle_inputs),
-            move_projectiles
+            move_projectiles,
         ));
 
     app.run();
@@ -40,7 +43,7 @@ const MAX_PLAYER_VEL: f32 = 500.;
 pub struct Player;
 
 #[derive(Component)]
-struct Projectile {
+pub struct Projectile {
     direction: Vec2,
 }
 #[derive(Component)]
@@ -86,10 +89,12 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn(SpriteBundle {
             sprite: Sprite {
-                color: Color::rgb(0.25, 0.25, 0.75),
-                custom_size: Some(Vec2::new(50.0, 100.0)),
+                // color: Color::rgb(0.25, 0.25, 0.75),
+                custom_size: Some(Vec2::new(100.0, 100.0)),
                 ..default()
             },
+            texture: asset_server.load("chester.png"),
+
             transform: Transform::from_translation(Vec3::new(-50., 0., 0.)),
             ..default()
         })
@@ -209,6 +214,8 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(Collider::cuboid(50.0, 50.0))
         .insert(Velocity::default())
         .insert(Enemy)
+        .insert(MaxHealth(10.0))
+        .insert(CurrentHealth(10.0))
         .insert(Sensor)
         .insert(EnemyDirection(1.0))
         .insert(JumpTimer(Timer::from_seconds(10.0, TimerMode::Repeating)));
@@ -262,11 +269,13 @@ pub fn handle_inputs(
     mut player_query: Query<(Entity, &mut Velocity, &mut Gravity, &Transform), (With<Player>,)>,
     time: Res<Time>,
     key_input: ResMut<Input<KeyCode>>,
+    mouse_input: ResMut<Input<MouseButton>>,
     mut commands: Commands,
+    cur: Res<CursorPos>,
 ) {
     let (player_e, mut vel, mut grav, transform) = player_query.single_mut();
     let mut d = Vec2::ZERO;
-    let speed = 300.;
+    let speed = 200.;
     let s = speed * time.delta_seconds();
 
     if key_input.pressed(KeyCode::A) {
@@ -282,13 +291,10 @@ pub fn handle_inputs(
     if key_input.pressed(KeyCode::S) {
         d.y -= 1.;
     }
-    if key_input.just_pressed(KeyCode::L) {
+    if mouse_input.just_pressed(MouseButton::Left) {
         // Create a small entity used as a projectile
-        let direction = if key_input.pressed(KeyCode::A) {
-            Vec2::new(-1.0, 0.0)
-        } else {
-            Vec2::new(1.0, 0.0)
-        };
+        let direction =
+            (cur.world_coords.truncate() - transform.translation.truncate()).normalize();
 
         commands.spawn((
             SpriteBundle {
@@ -303,6 +309,8 @@ pub fn handle_inputs(
                 },
                 ..default()
             },
+            Collider::cuboid(5.0, 5.0),
+            Sensor,
             Projectile { direction },
             Velocity(direction * 300.0), // Set the projectile direction and speed
         ));
@@ -375,12 +383,10 @@ pub fn handle_velocity(
 }
 
 pub fn handle_collisions(
-    mut collisions: EventReader<CollisionEvent>,
     mut player: Query<
         (Entity, &mut Velocity, &MaxHealth, &mut CurrentHealth),
         (With<Player>, Without<CollidedThisFrame>),
     >,
-    colliders: Query<Entity, With<Collider>>,
     enemies: Query<Entity, With<Enemy>>,
     mut commands: Commands,
     context: ResMut<RapierContext>,
@@ -393,8 +399,6 @@ pub fn handle_collisions(
         .intersection_pairs()
         .filter(|c| (c.0 == player) || (c.1 == player));
     for (e1, e2, _) in hits_this_frame {
-        // println!("{:?}", hit);
-        // vel.0 = Vec2::ZERO;
         if (e1 == player && enemies.get(e2).is_ok()) || (e2 == player && enemies.get(e1).is_ok()) {
             curr_hp.0 -= 1.;
             println!("HIT ENEMY {:?}", curr_hp.0);
@@ -402,6 +406,27 @@ pub fn handle_collisions(
         commands
             .entity(player)
             .insert(CollidedThisFrame(Timer::from_seconds(0.1, TimerMode::Once)));
+    }
+}
+
+pub fn handle_proj_collisions(
+    mut enemies: Query<(Entity, &mut CurrentHealth), (With<Enemy>)>,
+    projs: Query<Entity, With<Projectile>>,
+    mut commands: Commands,
+    context: ResMut<RapierContext>,
+) {
+    for (e1, e2, _) in context.intersection_pairs() {
+        for (enemy, mut curr_hp) in enemies.iter_mut() {
+            if (e1 == enemy && projs.get(e2).is_ok()) || (e2 == enemy && projs.get(e1).is_ok()) {
+                if projs.get(e1).is_ok() {
+                    commands.entity(e1).despawn();
+                } else {
+                    commands.entity(e2).despawn();
+                };
+                curr_hp.0 -= 1.;
+                println!("HIT ENEMY {:?}", curr_hp.0);
+            }
+        }
     }
 }
 
@@ -441,7 +466,9 @@ pub fn move_projectiles(
     time: Res<Time>,
 ) {
     for (mut transform, velocity, projectile) in projectile_query.iter_mut() {
-        transform.translation += Vec3::new(projectile.direction.x, projectile.direction.y, 0.0) * velocity.0.length() * time.delta_seconds();
+        transform.translation += Vec3::new(projectile.direction.x, projectile.direction.y, 0.0)
+            * velocity.0.length()
+            * time.delta_seconds();
     }
 }
 
@@ -449,6 +476,7 @@ pub fn handle_health_change(
     query: Query<(Entity, &MaxHealth, &CurrentHealth, Option<&Player>), Changed<CurrentHealth>>,
     mut hp_bar: Query<&mut Sprite, With<HPBar>>,
     mut money: Query<&mut MoneyText>,
+    mut commands: Commands,
 ) {
     for (entity, max_hp, curr_hp, player_option) in query.iter() {
         println!("HP: {}/{}", curr_hp.0, max_hp.0);
@@ -459,19 +487,76 @@ pub fn handle_health_change(
         } else {
             if curr_hp.0 <= 0. {
                 println!("KILL!");
+                commands.entity(entity).despawn_recursive();
                 money.single_mut().0 += 100;
             }
         }
     }
 }
 
-pub fn handle_update_money_text(
-    query: Query<&MoneyText, Changed<MoneyText>>,
-    mut text: Query<&mut Text>,
-) {
-    for money in query.iter() {
-        for mut text in text.iter_mut() {
-            text.sections[0].value = format!("${}", money.0);
-        }
+pub fn handle_update_money_text(mut query: Query<(&MoneyText, &mut Text), Changed<MoneyText>>) {
+    for (money, mut text) in query.iter_mut() {
+        text.sections[0].value = format!("${}", money.0);
     }
+}
+
+#[derive(Default, Resource, Debug)]
+pub struct CursorPos {
+    pub world_coords: Vec3,
+    pub screen_coords: Vec3,
+    pub ui_coords: Vec3,
+}
+
+pub fn update_cursor_pos(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    camera_q: Query<(&Transform, &Camera)>,
+    mut cursor_moved_events: EventReader<CursorMoved>,
+    mut cursor_pos: ResMut<CursorPos>,
+) {
+    for cursor_moved in cursor_moved_events.iter() {
+        // To get the mouse's world position, we have to transform its window position by
+        // any transforms on the camera. This is done by projecting the cursor position into
+        // camera space (world space).
+        for (cam_t, cam) in camera_q.iter() {
+            *cursor_pos = CursorPos {
+                world_coords: cursor_pos_in_world(&windows, cursor_moved.position, cam_t, cam),
+                ui_coords: cursor_pos_in_ui(&windows, cursor_moved.position, cam),
+                screen_coords: cursor_moved.position.extend(0.),
+            };
+        }
+        // println!("cur {:?}", cursor_pos.screen_coords);
+    }
+}
+
+pub fn cursor_pos_in_world(
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    cursor_pos: Vec2,
+    cam_t: &Transform,
+    cam: &Camera,
+) -> Vec3 {
+    let window = windows.single();
+
+    let window_size = Vec2::new(window.width(), window.height());
+
+    // Convert screen position [0..resolution] to ndc [-1..1]
+    // (ndc = normalized device coordinates)
+    let ndc_to_world = cam_t.compute_matrix() * cam.projection_matrix().inverse();
+    let ndc = (cursor_pos / window_size) * 2.0 - Vec2::ONE;
+    ndc_to_world.project_point3(ndc.extend(0.0))
+}
+pub fn cursor_pos_in_ui(
+    windows: &Query<&Window, With<PrimaryWindow>>,
+    cursor_pos: Vec2,
+    cam: &Camera,
+) -> Vec3 {
+    let window = windows.single();
+
+    let window_size = Vec2::new(window.width(), window.height());
+
+    // Convert screen position [0..resolution] to ndc [-1..1]
+    // (ndc = normalized device coordinates)
+    let t = Transform::from_translation(Vec3::new(0., 0., 0.));
+    let ndc_to_world = t.compute_matrix() * cam.projection_matrix().inverse();
+    let ndc = (cursor_pos / window_size) * 2.0 - Vec2::ONE;
+    ndc_to_world.project_point3(ndc.extend(0.0))
 }
