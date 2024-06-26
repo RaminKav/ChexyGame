@@ -94,9 +94,14 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2dBundle::default());
     // Background
     commands.spawn(SpriteBundle {
+        sprite: Sprite {
+            // color: Color::rgb(0.25, 0.25, 0.75),
+            custom_size: Some(Vec2::new(1290.0, 750.0)),
+            ..default()
+        },
         texture: asset_server.load("city-background.png"),
         transform: Transform {
-            translation: Vec3::new(0.0, 0.0, -1.0), // Ensure the background is behind all entities
+            translation: Vec3::new(0.0, 0.0, 0.0), // Ensure the background is behind all entities
             ..default()
         },
         ..default()
@@ -111,7 +116,7 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             texture: asset_server.load("chester.png"),
 
-            transform: Transform::from_translation(Vec3::new(-50., 0., 0.)),
+            transform: Transform::from_translation(Vec3::new(-50., 0., 1.)),
             ..default()
         })
         .insert(KinematicCharacterController {
@@ -137,7 +142,7 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 anchor: Anchor::CenterLeft,
                 ..default()
             },
-            transform: Transform::from_translation(Vec3::new(-490., 340., 0.)),
+            transform: Transform::from_translation(Vec3::new(-490., 340., 1.)),
             ..default()
         })
         .insert(HPBar);
@@ -223,15 +228,15 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 custom_size: Some(Vec2::new(100.0, 100.0)),
                 ..default()
             },
-            transform: Transform::from_translation(Vec3::new(0.0, -125., 0.)),
+            transform: Transform::from_translation(Vec3::new(0.0, -125., 1.)),
             ..default()
         })
         // .insert(RigidBody::Dynamic)
         .insert(Collider::cuboid(50.0, 50.0))
         .insert(Velocity::default())
         .insert(Enemy)
-        .insert(MaxHealth(2.0))
-        .insert(CurrentHealth(2.0))
+        .insert(MaxHealth(5.0))
+        .insert(CurrentHealth(5.0))
         .insert(Sensor)
         .insert(EnemyDirection(
             1.0,
@@ -241,47 +246,41 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     // Platform
     commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.75, 0.25, 0.25),
-                custom_size: Some(PLATFORM_SIZE),
-                ..default()
-            },
-            transform: Transform::from_translation(Vec3::new(0., -200., 0.)),
-            ..default()
-        })
-        .insert(Collider::cuboid(PLATFORM_SIZE.x / 2., PLATFORM_SIZE.y / 2.))
-        .insert(Sensor);
-    commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.75, 0.25, 0.25),
-                custom_size: Some(SMALL_PLATFORM_SIZE),
-                ..default()
-            },
-            transform: Transform::from_translation(Vec3::new(-200., 150., 0.)),
-            ..default()
-        })
-        .insert(Collider::cuboid(
-            SMALL_PLATFORM_SIZE.x / 2.,
-            SMALL_PLATFORM_SIZE.y / 2.,
+        .spawn(Collider::cuboid(PLATFORM_SIZE.x / 2., PLATFORM_SIZE.y / 2.))
+        .insert(TransformBundle::from_transform(
+            Transform::from_translation(Vec3::new(-200., -380., 0.)),
         ))
         .insert(Sensor);
-    commands
-        .spawn(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.75, 0.25, 0.25),
-                custom_size: Some(SMALL_PLATFORM_SIZE),
-                ..default()
-            },
-            transform: Transform::from_translation(Vec3::new(200., 200., 0.)),
-            ..default()
-        })
-        .insert(Collider::cuboid(
-            SMALL_PLATFORM_SIZE.x / 2.,
-            SMALL_PLATFORM_SIZE.y / 2.,
-        ))
-        .insert(Sensor);
+    // commands
+    //     .spawn(SpriteBundle {
+    //         sprite: Sprite {
+    //             color: Color::rgb(0.75, 0.25, 0.25),
+    //             custom_size: Some(SMALL_PLATFORM_SIZE),
+    //             ..default()
+    //         },
+    //         transform: Transform::from_translation(Vec3::new(-200., 150., 0.)),
+    //         ..default()
+    //     })
+    //     .insert(Collider::cuboid(
+    //         SMALL_PLATFORM_SIZE.x / 2.,
+    //         SMALL_PLATFORM_SIZE.y / 2.,
+    //     ))
+    //     .insert(Sensor);
+    // commands
+    //     .spawn(SpriteBundle {
+    //         sprite: Sprite {
+    //             color: Color::rgb(0.75, 0.25, 0.25),
+    //             custom_size: Some(SMALL_PLATFORM_SIZE),
+    //             ..default()
+    //         },
+    //         transform: Transform::from_translation(Vec3::new(200., 200., 0.)),
+    //         ..default()
+    //     })
+    //     .insert(Collider::cuboid(
+    //         SMALL_PLATFORM_SIZE.x / 2.,
+    //         SMALL_PLATFORM_SIZE.y / 2.,
+    //     ))
+    //     .insert(Sensor);
 }
 
 pub fn handle_inputs(
@@ -606,7 +605,7 @@ pub fn spawn_random_enemies(
         let pos = Vec3::new(
             rng.gen_range(-300.0..300.0),
             rng.gen_range(-200.0..300.0),
-            0.,
+            1.,
         );
         commands
             .spawn(SpriteBundle {
@@ -622,8 +621,8 @@ pub fn spawn_random_enemies(
             .insert(Collider::cuboid(50.0, 50.0))
             // .insert(Velocity::default())
             .insert(Enemy)
-            .insert(MaxHealth(2.0))
-            .insert(CurrentHealth(2.0))
+            .insert(MaxHealth(5.))
+            .insert(CurrentHealth(5.))
             .insert(Sensor)
             .insert(EnemyDirection(
                 1.0,
@@ -640,6 +639,7 @@ pub fn tick_month(
     mut rent_tracker: Query<&mut MoneyText>,
     asset_server: Res<AssetServer>,
     mut commands: Commands,
+    mut player: Query<&mut CurrentHealth, With<Player>>,
 ) {
     month.0.tick(time.delta());
     for mut t in text.iter_mut() {
@@ -679,8 +679,10 @@ pub fn tick_month(
                     ..default()
                 }),
             ));
+            player.single_mut().0 -= 30.;
         } else {
             rent.0 -= rent.1;
+            player.single_mut().0 += 30.;
         }
     }
 }
