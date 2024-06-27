@@ -1,8 +1,9 @@
-use bevy::{prelude::*, sprite::Anchor, window::PrimaryWindow};
+use bevy::{asset, prelude::*, sprite::Anchor, window::PrimaryWindow};
 use bevy_rapier2d::{
     control::KinematicCharacterController,
     dynamics::RigidBody,
     geometry::{Collider, Sensor},
+    na::Translation,
     pipeline::{CollisionEvent, QueryFilterFlags},
     plugin::{NoUserData, RapierConfiguration, RapierContext, RapierPhysicsPlugin},
     render::RapierDebugRenderPlugin,
@@ -13,6 +14,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .insert_resource(CursorPos::default())
+        .insert_resource(CurrentCard(0))
         .insert_resource(SpawnTimer(Timer::from_seconds(3., TimerMode::Repeating)))
         .insert_resource(MonthTimer(Timer::from_seconds(75., TimerMode::Repeating)))
         // .insert_resource(RapierConfiguration {
@@ -20,11 +22,12 @@ fn main() {
         //     ..Default::default()
         // })
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugin(RapierDebugRenderPlugin::default())
+        // .add_plugin(RapierDebugRenderPlugin::default())
         .add_startup_system(setup)
         .add_systems((
             handle_inputs,
             update_cursor_pos,
+            handle_despawn_timers,
             handle_velocity,
             tick_month,
             handle_proj_collisions,
@@ -50,6 +53,7 @@ pub struct Player;
 #[derive(Component)]
 pub struct Projectile {
     direction: Vec2,
+    damage: f32,
 }
 #[derive(Component)]
 pub struct MaxHealth(pub f32);
@@ -235,8 +239,8 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(Collider::cuboid(50.0, 50.0))
         .insert(Velocity::default())
         .insert(Enemy)
-        .insert(MaxHealth(5.0))
-        .insert(CurrentHealth(5.0))
+        .insert(MaxHealth(50.0))
+        .insert(CurrentHealth(50.0))
         .insert(Sensor)
         .insert(EnemyDirection(
             1.0,
@@ -283,6 +287,9 @@ pub fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     //     .insert(Sensor);
 }
 
+#[derive(Resource)]
+pub struct CurrentCard(pub i32);
+
 pub fn handle_inputs(
     mut player_query: Query<
         (Entity, &mut Velocity, &mut Gravity, &mut Sprite, &Transform),
@@ -294,6 +301,8 @@ pub fn handle_inputs(
     mut commands: Commands,
     cur: Res<CursorPos>,
     asset_server: Res<AssetServer>,
+    mut money: Query<&mut MoneyText>,
+    mut card: ResMut<CurrentCard>,
 ) {
     let (player_e, mut vel, mut grav, mut sprite, transform) = player_query.single_mut();
     let mut d = Vec2::ZERO;
@@ -322,6 +331,15 @@ pub fn handle_inputs(
         d.y -= 1.;
     }
 
+    if key_input.pressed(KeyCode::Q) {
+        println!("UPGRADE");
+        let mut money = money.single_mut();
+        if money.0 >= 1000 {
+            money.0 -= 1000;
+            card.0 = 1;
+        }
+    }
+
     if !key_input.pressed(KeyCode::A) && !key_input.pressed(KeyCode::D) {
         vel.0.x = 0.;
     }
@@ -329,6 +347,11 @@ pub fn handle_inputs(
         // Create a small entity used as a projectile
         let direction =
             (cur.world_coords.truncate() - transform.translation.truncate()).normalize();
+        let (damage, asset) = if card.0 == 0 {
+            (10., "credit-card-projectile.png")
+        } else {
+            (15., "credit-card-projectile2.png")
+        };
 
         commands.spawn((
             SpriteBundle {
@@ -337,7 +360,7 @@ pub fn handle_inputs(
                     custom_size: Some(Vec2::new(70.0, 50.0)),
                     ..default()
                 },
-                texture: asset_server.load("credit-card-projectile-upgrade.png"),
+                texture: asset_server.load(asset),
 
                 transform: Transform {
                     translation: transform.translation,
@@ -347,7 +370,7 @@ pub fn handle_inputs(
             },
             Collider::cuboid(5.0, 5.0),
             Sensor,
-            Projectile { direction },
+            Projectile { direction, damage },
             Velocity(direction * 300.0), // Set the projectile direction and speed
         ));
     }
@@ -447,10 +470,11 @@ pub fn handle_collisions(
 }
 
 pub fn handle_proj_collisions(
-    mut enemies: Query<(Entity, &mut CurrentHealth), (With<Enemy>)>,
+    mut enemies: Query<(Entity, &mut CurrentHealth), With<Enemy>>,
     projs: Query<Entity, With<Projectile>>,
     mut commands: Commands,
     context: ResMut<RapierContext>,
+    card: Res<CurrentCard>,
 ) {
     for (e1, e2, _) in context.intersection_pairs() {
         for (enemy, mut curr_hp) in enemies.iter_mut() {
@@ -460,7 +484,9 @@ pub fn handle_proj_collisions(
                 } else {
                     commands.entity(e2).despawn();
                 };
-                curr_hp.0 -= 1.;
+
+                curr_hp.0 -= if card.0 == 0 { 10. } else { 15. };
+
                 println!("HIT ENEMY {:?}", curr_hp.0);
             }
         }
@@ -504,12 +530,23 @@ pub fn move_projectiles(
 }
 
 pub fn handle_health_change(
-    query: Query<(Entity, &MaxHealth, &CurrentHealth, Option<&Player>), Changed<CurrentHealth>>,
+    query: Query<
+        (
+            Entity,
+            &Transform,
+            &MaxHealth,
+            &CurrentHealth,
+            Option<&Player>,
+        ),
+        Changed<CurrentHealth>,
+    >,
     mut hp_bar: Query<&mut Sprite, With<HPBar>>,
     mut money: Query<&mut MoneyText>,
     mut commands: Commands,
+    card: Res<CurrentCard>,
+    asset_server: Res<AssetServer>,
 ) {
-    for (entity, max_hp, curr_hp, player_option) in query.iter() {
+    for (entity, t, max_hp, curr_hp, player_option) in query.iter() {
         println!("HP: {}/{}", curr_hp.0, max_hp.0);
         if player_option.is_some() {
             for mut sprite in hp_bar.iter_mut() {
@@ -519,7 +556,34 @@ pub fn handle_health_change(
             if curr_hp.0 <= 0. {
                 println!("KILL!");
                 commands.entity(entity).despawn_recursive();
-                money.single_mut().0 += 100;
+                money.single_mut().0 += if card.0 == 0 { 100 } else { 150 };
+
+                commands
+                    .spawn((
+                        DespawnTimer(Timer::from_seconds(1., TimerMode::Once)),
+                        // Create a TextBundle that has a Text with a single section.
+                        TextBundle::from_section(
+                            // Accepts a `String` or any type that converts into a `String`, such as `&str`
+                            format!("+${}", if card.0 == 0 { 100 } else { 150 }),
+                            TextStyle {
+                                font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                                font_size: 40.0,
+                                color: Color::GREEN,
+                            },
+                        ) // Set the alignment of the Text
+                        .with_text_alignment(TextAlignment::Left)
+                        // Set the style of the TextBundle itself.
+                        .with_style(Style {
+                            position_type: PositionType::Absolute,
+                            position: UiRect {
+                                top: Val::Px(200.0),
+                                left: Val::Px(300.0),
+                                ..default()
+                            },
+                            ..default()
+                        }),
+                    ))
+                    .insert(t.clone());
             }
         }
     }
@@ -602,7 +666,6 @@ pub fn spawn_random_enemies(
     mut spawn_timer: ResMut<SpawnTimer>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-
 ) {
     spawn_timer.0.tick(time.delta());
     if spawn_timer.0.finished() {
@@ -627,8 +690,8 @@ pub fn spawn_random_enemies(
             .insert(Collider::cuboid(50.0, 50.0))
             // .insert(Velocity::default())
             .insert(Enemy)
-            .insert(MaxHealth(5.))
-            .insert(CurrentHealth(5.))
+            .insert(MaxHealth(50.))
+            .insert(CurrentHealth(50.))
             .insert(Sensor)
             .insert(EnemyDirection(
                 1.0,
@@ -637,6 +700,9 @@ pub fn spawn_random_enemies(
             .insert(JumpTimer(Timer::from_seconds(10.0, TimerMode::Repeating)));
     }
 }
+
+#[derive(Component)]
+pub struct DespawnTimer(Timer);
 
 pub fn tick_month(
     mut month: ResMut<MonthTimer>,
@@ -663,13 +729,14 @@ pub fn tick_month(
         let mut rent = rent_tracker.single_mut();
         if rent.0 < rent.1 {
             commands.spawn((
+                DespawnTimer(Timer::from_seconds(5., TimerMode::Once)),
                 // Create a TextBundle that has a Text with a single section.
                 TextBundle::from_section(
                     // Accepts a `String` or any type that converts into a `String`, such as `&str`
-                    "GAME OVER",
+                    "NOT ENOUGH MONEY FOR RENT: CREDIT SCORE LOWERED",
                     TextStyle {
                         font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                        font_size: 100.0,
+                        font_size: 50.0,
                         color: Color::ORANGE_RED,
                     },
                 ) // Set the alignment of the Text
@@ -679,7 +746,7 @@ pub fn tick_month(
                     position_type: PositionType::Absolute,
                     position: UiRect {
                         top: Val::Px(200.0),
-                        left: Val::Px(600.0),
+                        left: Val::Px(100.0),
                         ..default()
                     },
                     ..default()
@@ -689,6 +756,48 @@ pub fn tick_month(
         } else {
             rent.0 -= rent.1;
             player.single_mut().0 += 30.;
+        }
+        rent.1 += 200;
+    }
+
+    if player.single_mut().0 <= 0. {
+        commands.spawn((
+            DespawnTimer(Timer::from_seconds(5., TimerMode::Once)),
+            // Create a TextBundle that has a Text with a single section.
+            TextBundle::from_section(
+                // Accepts a `String` or any type that converts into a `String`, such as `&str`
+                "CREDIT SCORE TOO LOW: GAME OVER",
+                TextStyle {
+                    font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                    font_size: 50.0,
+                    color: Color::RED,
+                },
+            ) // Set the alignment of the Text
+            .with_text_alignment(TextAlignment::Left)
+            // Set the style of the TextBundle itself.
+            .with_style(Style {
+                position_type: PositionType::Absolute,
+                position: UiRect {
+                    top: Val::Px(200.0),
+                    left: Val::Px(100.0),
+                    ..default()
+                },
+                ..default()
+            }),
+        ));
+    }
+}
+
+pub fn handle_despawn_timers(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut DespawnTimer)>,
+) {
+    for (entity, mut timer) in query.iter_mut() {
+        timer.0.tick(time.delta());
+        if timer.0.finished() {
+            println!("despawn");
+            commands.entity(entity).despawn_recursive();
         }
     }
 }
